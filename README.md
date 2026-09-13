@@ -8,7 +8,14 @@ A Paseo plugin that shows which ports and Docker containers belong to which work
   whose main checkout has processes but no open workspace, then anything unattributed.
 - ⌘K: "Open runtime panel" in a workspace, "Open runtime radar" anywhere.
 
-Read-only. Refreshes every five seconds while open.
+Refreshes every five seconds while open. The toolbar and Settings → Plugins → Runtime radar choose
+the grouping: by workspace, by project (a project's worktrees folded together), or by kind (all
+ports, then all containers, each row naming its scope). The choice is saved per host.
+
+Rows carry Stop and Force kill for processes and Restart and Stop for containers, behind a
+confirmation. Turn them off in the settings screen. A process is only signalled if `lsof -a -p`
+still shows it listening, and anything named Paseo, the plugin's own process, and its daemon parent
+are refused outright.
 
 ## Install
 

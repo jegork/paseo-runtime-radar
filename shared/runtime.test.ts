@@ -5,6 +5,7 @@ import {
   parseLsofCwds,
   parseLsofListeners,
   publishedPorts,
+  refuseReason,
   withoutPublishedPorts,
 } from "./runtime";
 
@@ -109,5 +110,29 @@ describe("withoutPublishedPorts", () => {
       { port: 5173, address: "*", pid: 2, command: "node" },
     ];
     expect(withoutPublishedPorts(sockets, containers).map((s) => s.port)).toEqual([5432, 5173]);
+  });
+});
+
+describe("refuseReason", () => {
+  const self = { pid: 500, ppid: 400 };
+
+  test("refuses pid 1, the plugin process and its daemon parent before any lookup", () => {
+    for (const pid of [0, 1, 500, 400]) expect(refuseReason(pid, [], self)).toBe("That process is Paseo itself.");
+  });
+
+  test("refuses a pid that no longer listens, even if other processes do", () => {
+    // the bug this guards: an lsof answer that describes other processes
+    const others = [{ port: 6767, address: "*", pid: 23686, command: "Paseo\\x20Helper" }];
+    expect(refuseReason(71170, others, self)).toBe("pid 71170 is not listening on any port any more.");
+  });
+
+  test("refuses any Paseo process by name", () => {
+    const sockets = [{ port: 6767, address: "*", pid: 23686, command: "Paseo\\x20Helper" }];
+    expect(refuseReason(23686, sockets, self)).toBe("That process is Paseo itself.");
+  });
+
+  test("allows a listening dev server", () => {
+    const sockets = [{ port: 5173, address: "*", pid: 71170, command: "node" }];
+    expect(refuseReason(71170, sockets, self)).toBeNull();
   });
 });

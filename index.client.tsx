@@ -1,5 +1,6 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { RuntimePanel } from "./client/panel";
+import { RuntimeSettings } from "./client/settings";
 import { RuntimeSurface } from "./client/surface";
 
 export default function contribute(client: PluginClientContext) {
@@ -23,6 +24,7 @@ export default function contribute(client: PluginClientContext) {
       openPanel("runtime");
     },
   });
+  client.addSettingsScreen({ id: "display", title: "Runtime radar", icon: "RadioTower", Component: RuntimeSettings });
   client.addCommandCenterItem({
     id: "open-radar",
     title: "Open runtime radar",

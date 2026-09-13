@@ -1,12 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import {
   attribute,
   parseDockerPs,
   parseLsofCwds,
   parseLsofListeners,
+  refuseReason,
   withoutPublishedPorts,
+  type ActionResultSchema,
   type Container,
   type ContainerRow,
   type Listener,
@@ -14,7 +17,12 @@ import {
   type RuntimeSnapshot,
   type Socket,
   type WorkspaceRef,
+  containerActionRpc,
+  signalProcessRpc,
 } from "../shared/runtime";
+import type { z } from "zod";
+
+type ActionResult = z.output<typeof ActionResultSchema>;
 
 const run = promisify(execFile);
 
@@ -120,4 +128,43 @@ export async function snapshotRuntime(_input: object, context: PluginHandlerCont
   const listeners = await resolveListeners(withoutPublishedPorts(sockets, rows), scopes, errors);
   const containers: Container[] = rows.map((row) => ({ ...row, ...attributeBoth(row.workingDir, scopes) }));
   return { ...scopes, listeners, containers, errors, takenAt: new Date().toISOString() };
+}
+
+/**
+ * Only a process the panel just showed can be signalled: it must still be
+ * listening, and it must not be the daemon this plugin runs under. The
+ * second `lsof` is the check, not a cached snapshot the panel could be stale on.
+ */
+export async function signalProcess({ pid, signal }: RpcInput<typeof signalProcessRpc>): Promise<ActionResult> {
+  const self = { pid: process.pid, ppid: process.ppid };
+  let sockets: Socket[] = [];
+  if (refuseReason(pid, [], self) !== "That process is Paseo itself.") {
+    try {
+      // -a ANDs the selectors; without it lsof lists every listener on the machine
+      sockets = parseLsofListeners(await runTool("lsof", ["-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-F", "pcn"]));
+    } catch (error) {
+      if (!isEmptyMatch(error)) return { ok: false, message: `lsof: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+  const refused = refuseReason(pid, sockets, self);
+  if (refused !== null) return { ok: false, message: refused };
+  try {
+    process.kill(pid, signal === "KILL" ? "SIGKILL" : "SIGTERM");
+  } catch (error) {
+    const code = typeof error === "object" && error !== null ? Reflect.get(error, "code") : null;
+    if (code === "EPERM") return { ok: false, message: `pid ${pid} belongs to another user.` };
+    if (code === "ESRCH") return { ok: false, message: `pid ${pid} already exited.` };
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+  return { ok: true, message: signal === "KILL" ? `Killed pid ${pid}.` : `Asked pid ${pid} to stop.` };
+}
+
+export async function containerAction({ id, action }: RpcInput<typeof containerActionRpc>): Promise<ActionResult> {
+  try {
+    await run("docker", [action, id], { encoding: "utf8", timeout: 30_000 });
+  } catch (error) {
+    const stderr = typeof error === "object" && error !== null ? String(Reflect.get(error, "stderr") ?? "") : "";
+    return { ok: false, message: (stderr.trim() || (error instanceof Error ? error.message : String(error))).split("\n")[0] ?? "docker failed" };
+  }
+  return { ok: true, message: action === "stop" ? `Stopped ${id.slice(0, 12)}.` : `Restarted ${id.slice(0, 12)}.` };
 }

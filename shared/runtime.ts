@@ -1,4 +1,4 @@
-import { defineRpc } from "@getpaseo/plugin";
+import { defineRpc, defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 
 export const WorkspaceRefSchema = z.object({
@@ -54,6 +54,34 @@ export const runtimeSnapshotRpc = defineRpc({
   name: "runtime.snapshot",
   input: z.object({}),
   output: RuntimeSnapshotSchema,
+});
+
+export const ActionResultSchema = z.object({
+  ok: z.boolean(),
+  message: z.string(),
+});
+
+/** SIGTERM asks a dev server to exit; SIGKILL is for the one that ignores it. */
+export const signalProcessRpc = defineRpc({
+  name: "runtime.signal",
+  input: z.object({ pid: z.number().int().positive(), signal: z.enum(["TERM", "KILL"]) }),
+  output: ActionResultSchema,
+});
+
+export const containerActionRpc = defineRpc({
+  name: "runtime.container",
+  input: z.object({ id: z.string().regex(/^[a-f0-9]{6,64}$/), action: z.enum(["stop", "restart"]) }),
+  output: ActionResultSchema,
+});
+
+export const preferences = defineSettings({
+  id: "display",
+  scope: "host",
+  version: 1,
+  schema: z.object({
+    groupBy: z.enum(["workspace", "project", "kind"]).default("workspace"),
+    allowActions: z.boolean().default(true),
+  }),
 });
 
 /**
@@ -190,4 +218,17 @@ export function publishedPorts(containers: ContainerRow[]): Set<number> {
 export function withoutPublishedPorts(sockets: Socket[], containers: ContainerRow[]): Socket[] {
   const published = publishedPorts(containers);
   return sockets.filter((socket) => !published.has(socket.port));
+}
+
+/**
+ * Why a pid may not be signalled, or null when it may. The socket list must
+ * come from an `lsof -a -p <pid>` query so it describes that process alone;
+ * any Paseo process is refused by name as a second line of defence.
+ */
+export function refuseReason(pid: number, sockets: Socket[], self: { pid: number; ppid: number }): string | null {
+  if (pid <= 1 || pid === self.pid || pid === self.ppid) return "That process is Paseo itself.";
+  const own = sockets.filter((socket) => socket.pid === pid);
+  if (own.length === 0) return `pid ${pid} is not listening on any port any more.`;
+  if (own.some((socket) => /paseo/i.test(socket.command))) return "That process is Paseo itself.";
+  return null;
 }
