@@ -10,6 +10,14 @@ A Paseo plugin that shows which ports and Docker containers belong to which work
 
 Read-only. Refreshes every five seconds while open.
 
+## Install
+
+```sh
+paseo plugin add jegork/paseo-runtime-radar
+```
+
+Requires `lsof` on the daemon machine; `docker` is optional and its absence is shown on the panel.
+
 ## How attribution works
 
 - Ports come from `lsof -iTCP -sTCP:LISTEN`; each process's working directory is read with a second
@@ -21,8 +29,3 @@ Read-only. Refreshes every five seconds while open.
   the container row rather than shown twice.
 - A process whose cwd is unreadable (another user's) still shows, unattributed.
 
-```bash
-paseo plugin install /absolute/path/to/paseo-runtime-radar
-```
-
-Requires Paseo 0.8 and `lsof`; `docker` is optional and its absence is reported on the panel.
