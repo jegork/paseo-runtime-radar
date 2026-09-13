@@ -1,0 +1,28 @@
+# runtime-radar
+
+A Paseo plugin that shows which ports and Docker containers belong to which worktree.
+
+- **Runtime panel** (workspace tab or Explorer): this workspace's listening ports and containers,
+  then everything else on the machine with its working directory.
+- **Runtime radar** (sidebar): every open workspace with its ports and containers, then projects
+  whose main checkout has processes but no open workspace, then anything unattributed.
+- ⌘K: "Open runtime panel" in a workspace, "Open runtime radar" anywhere.
+
+Read-only. Refreshes every five seconds while open.
+
+## How attribution works
+
+- Ports come from `lsof -iTCP -sTCP:LISTEN`; each process's working directory is read with a second
+  `lsof -d cwd`. A process whose cwd sits inside a workspace directory belongs to that workspace,
+  deepest match first, so a worktree beats its project root.
+- Containers come from `docker ps`. Compose sets `com.docker.compose.project.working_dir`, which is
+  matched the same way. Plain `docker run` containers have no directory and show as unattributed.
+- A host port a container publishes is held by Docker's proxy, so those listeners are folded into
+  the container row rather than shown twice.
+- A process whose cwd is unreadable (another user's) still shows, unattributed.
+
+```bash
+paseo plugin install /absolute/path/to/paseo-runtime-radar
+```
+
+Requires Paseo 0.8 and `lsof`; `docker` is optional and its absence is reported on the panel.
